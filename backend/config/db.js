@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    const uri = process.env.MONGO_URI || "mongodb+srv://Admin:iamdeekshithadmin@cluster0.dy2bogi.mongodb.net/smartqueue?appName=Cluster0" ;
+    const uri = process.env.MONGO_URI
     await mongoose.connect(uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
