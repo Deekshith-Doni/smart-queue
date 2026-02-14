@@ -10,7 +10,8 @@ Academic + real-world project suitable for BCA final year, internships, and tech
 
 ## Features
 - User (no login): select service, get token, see status (current serving, waiting count, estimated wait time). Auto-refresh via polling.
-- Admin (login): dashboard with overview, move to next token, reset queue, analytics, and waiting list. JWT-protected.
+- Admin (login): dashboard with overview, move to next token, reset queue, analytics, waiting list, and timing stats. JWT-protected.
+- Optional time controls: per-token assigned time and per-service default time to improve wait estimates.
 
 ## Project Structure
 smart-queue-system/
@@ -52,7 +53,7 @@ Open `http://localhost:5173`. The frontend uses `http://localhost:5000/api` when
 ## API Endpoints
 User APIs:
 - POST `/api/queue/token` — generate token `{ serviceType }`
-- GET `/api/queue/status?tokenNumber=123` — currentServingToken, waitingCount, estimatedWaitTime, userToken
+- GET `/api/queue/status?tokenNumber=123` — currentServingToken, waitingCount, estimatedWaitTime, userToken, userTokenEstimatedWaitTime
 
 Admin APIs:
 - POST `/api/admin/login`
@@ -60,11 +61,16 @@ Admin APIs:
 - POST `/api/admin/reset`
 - GET  `/api/admin/analytics`
 - GET  `/api/admin/waiting` (for dashboard list)
+- GET  `/api/admin/timings` (timing stats)
+- GET  `/api/admin/all-tokens` (admin selection list)
+- POST `/api/admin/assign-time` (per-token assigned minutes)
+- GET  `/api/admin/service-times` (per-service defaults)
+- POST `/api/admin/service-times` (set/clear defaults)
 
 ## Design Notes (Interview-ready)
 - Auto-increment tokens use a `Counter` collection with `findOneAndUpdate($inc)` to avoid race conditions.
 - Only one `serving` token at a time: admin `next` marks current `serving` as `served`, then promotes earliest `waiting`.
-- Estimated wait time: average of historical served durations; fallback to 5 minutes per token for early usage.
+- Estimated wait time: per-token assigned time overrides service defaults; otherwise average of historical served durations (fallback to 5 minutes).
 - Admin seeding: optional seed on startup from `.env` for demo simplicity.
 - Clean MVC: models/controllers/routes/middleware with async/await and centralized error handling.
 
