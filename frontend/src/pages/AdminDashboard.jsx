@@ -8,27 +8,33 @@ export default function AdminDashboard() {
   const [serving, setServing] = useState(null);
   const [timings, setTimings] = useState(null);
   const [allTokens, setAllTokens] = useState([]);
+  const [serviceTimes, setServiceTimes] = useState([]);
+  const [serviceTypeForDefault, setServiceTypeForDefault] = useState('General');
+  const [defaultTimeInput, setDefaultTimeInput] = useState('');
   const [loadingNext, setLoadingNext] = useState(false);
   const [tab, setTab] = useState('overview');
   const [selectedTokenForTime, setSelectedTokenForTime] = useState('');
   const [timeInput, setTimeInput] = useState('');
   const [assigningTime, setAssigningTime] = useState(false);
+  const [savingDefaultTime, setSavingDefaultTime] = useState(false);
   const navigate = useNavigate();
 
   const fetchData = async () => {
     try {
-      const [anRes, statusRes, waitingRes, timingsRes, allTokensRes] = await Promise.all([
+      const [anRes, statusRes, waitingRes, timingsRes, allTokensRes, serviceTimesRes] = await Promise.all([
         api.get('/admin/analytics'),
         api.get('/queue/status'),
         api.get('/admin/waiting'),
         api.get('/admin/timings'),
         api.get('/admin/all-tokens'),
+        api.get('/admin/service-times'),
       ]);
       setAnalytics(anRes.data);
       setServing(statusRes.data.currentServingToken);
       setWaiting(waitingRes.data.waiting || []);
       setTimings(timingsRes.data);
       setAllTokens(allTokensRes.data.tokens || []);
+      setServiceTimes(serviceTimesRes.data.serviceTimes || []);
     } catch (err) {
       console.error(err);
       if (err.response?.status === 401) {
@@ -96,6 +102,34 @@ export default function AdminDashboard() {
       alert(err.response?.data?.error || 'Failed to assign time');
     } finally {
       setAssigningTime(false);
+    }
+  };
+
+  const saveDefaultTime = async () => {
+    try {
+      setSavingDefaultTime(true);
+
+      if (defaultTimeInput === '') {
+        await api.post('/admin/service-times', { serviceType: serviceTypeForDefault, estimatedMinutes: null });
+        alert(`Default time cleared for ${serviceTypeForDefault}`);
+        fetchData();
+        return;
+      }
+
+      const minutes = parseFloat(defaultTimeInput);
+      if (isNaN(minutes) || minutes <= 0) {
+        alert('Please enter a valid positive number (minutes) or leave empty to clear');
+        return;
+      }
+
+      await api.post('/admin/service-times', { serviceType: serviceTypeForDefault, estimatedMinutes: minutes });
+      alert(`Default time set to ${minutes} minute(s) for ${serviceTypeForDefault}`);
+      setDefaultTimeInput('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to save default time');
+    } finally {
+      setSavingDefaultTime(false);
     }
   };
 
@@ -185,6 +219,44 @@ export default function AdminDashboard() {
             {assigningTime ? 'Assigning…' : 'Assign Time'}
           </button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Default Service Times (Optional)</h3>
+        <p style={{ fontSize: 14, color: '#666', marginTop: 0 }}>Set default times per service. Leave empty and save to clear.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <select
+            className="select"
+            value={serviceTypeForDefault}
+            onChange={(e) => setServiceTypeForDefault(e.target.value)}
+          >
+            <option>General</option>
+            <option>Billing</option>
+            <option>Support</option>
+            <option>Technical</option>
+          </select>
+          <input
+            type="number"
+            className="input"
+            placeholder="Minutes"
+            value={defaultTimeInput}
+            onChange={(e) => setDefaultTimeInput(e.target.value)}
+            min="0"
+            step="0.5"
+          />
+          <button
+            className="button"
+            onClick={saveDefaultTime}
+            disabled={savingDefaultTime}
+          >
+            {savingDefaultTime ? 'Saving…' : 'Save Default'}
+          </button>
+        </div>
+        {serviceTimes.length > 0 && (
+          <div style={{ fontSize: 14, color: '#444' }}>
+            Current defaults: {serviceTimes.map((t) => `${t.serviceType}: ${t.estimatedMinutes} min`).join(' | ')}
+          </div>
+        )}
       </div>
 
           <div className="card">

@@ -6,7 +6,7 @@ import api from '../services/api.js';
 export default function UserPage() {
   const [serviceType, setServiceType] = useState('General');
   const [myToken, setMyToken] = useState(null);
-  const [status, setStatus] = useState({ currentServingToken: null, waitingCount: 0, estimatedWaitTime: 0 });
+  const [status, setStatus] = useState({ currentServingToken: null, waitingCount: 0, estimatedWaitTime: 0, userTokenEstimatedWaitTime: null });
   const [loading, setLoading] = useState(false);
 
   const fetchStatus = async (tokenNumber) => {
@@ -75,8 +75,8 @@ export default function UserPage() {
             <strong>{status.waitingCount}</strong>
           </div>
           <div className="stat">
-            <div>Est. Wait (min)</div>
-            <strong>{status.estimatedWaitTime}</strong>
+            <div>{myToken ? 'Your Est. Wait (min)' : 'Est. Wait (min)'}</div>
+            <strong>{myToken && status.userTokenEstimatedWaitTime !== null ? status.userTokenEstimatedWaitTime : status.estimatedWaitTime}</strong>
           </div>
           <div className="stat">
             <div>Your Token</div>

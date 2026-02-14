@@ -2,6 +2,7 @@
 // and admin operations like progressing to next token and resetting.
 import Queue from '../models/Queue.js';
 import Counter from '../models/Counter.js';
+import ServiceTime from '../models/ServiceTime.js';
 
 // Helper: atomically get next token number
 async function getNextTokenNumber() {
@@ -35,6 +36,15 @@ async function computeAnalytics() {
   return { totalTokensGenerated: total, tokensServed: servedCount, averageWaitingTime: avgWaitMinutes };
 }
 
+// Helper: load default service time map
+async function getServiceTimeMap() {
+  const entries = await ServiceTime.find().select('serviceType estimatedMinutes');
+  return entries.reduce((map, item) => {
+    map[item.serviceType] = item.estimatedMinutes;
+    return map;
+  }, {});
+}
+
 // POST /api/queue/token
 export const generateToken = async (req, res, next) => {
   try {
@@ -63,22 +73,39 @@ export const getStatus = async (req, res, next) => {
     const userTokenNumber = req.query.tokenNumber ? Number(req.query.tokenNumber) : null;
 
     const currentServingDoc = await Queue.findOne({ status: 'serving' }).sort({ tokenNumber: 1 });
-    const waitingCount = await Queue.countDocuments({ status: 'waiting' });
+    const waitingTokens = await Queue.find({ status: 'waiting' }).sort({ tokenNumber: 1 }).select('tokenNumber serviceType assignedServiceTime');
+    const waitingCount = waitingTokens.length;
 
-    // Estimated wait time: waitingCount * averageWaitingTime OR fallback 5 minutes per token
+    // Estimated wait time: sum of assigned time, service defaults, or fallback average
     const analytics = await computeAnalytics();
-    const perTokenMinutes = analytics.averageWaitingTime || 5; // fallback conservative default
-    const estimatedWaitTime = waitingCount * perTokenMinutes;
+    const serviceTimeMap = await getServiceTimeMap();
+    const fallbackMinutes = analytics.averageWaitingTime || 5;
+    const estimateForToken = (token) => {
+      if (token.assignedServiceTime !== null && token.assignedServiceTime !== undefined) {
+        return token.assignedServiceTime;
+      }
+      if (serviceTimeMap[token.serviceType] !== undefined) {
+        return serviceTimeMap[token.serviceType];
+      }
+      return fallbackMinutes;
+    };
+
+    const estimatedWaitTime = waitingTokens.reduce((sum, t) => sum + estimateForToken(t), 0);
 
     // If userTokenNumber is provided, try to include its status
     let userToken = null;
+    let userTokenEstimatedWaitTime = null;
     if (userTokenNumber) {
       const doc = await Queue.findOne({ tokenNumber: userTokenNumber });
       if (doc) {
+        // Estimate wait for this user: sum of estimates of tokens ahead in waiting list
+        const aheadTokens = waitingTokens.filter((t) => t.tokenNumber < doc.tokenNumber);
+        userTokenEstimatedWaitTime = aheadTokens.reduce((sum, t) => sum + estimateForToken(t), 0);
         userToken = {
           tokenNumber: doc.tokenNumber,
           status: doc.status,
           serviceType: doc.serviceType,
+          assignedServiceTime: doc.assignedServiceTime,
         };
       }
     }
@@ -88,6 +115,7 @@ export const getStatus = async (req, res, next) => {
       waitingCount,
       estimatedWaitTime, // minutes
       userToken,
+      userTokenEstimatedWaitTime,
     });
   } catch (err) {
     next(err);
@@ -215,12 +243,15 @@ export const assignServiceTime = async (req, res, next) => {
   try {
     const { tokenNumber, assignedServiceTime } = req.body;
 
-    if (!tokenNumber || assignedServiceTime === undefined) {
-      return res.status(400).json({ error: 'tokenNumber and assignedServiceTime are required' });
+    if (!tokenNumber) {
+      return res.status(400).json({ error: 'tokenNumber is required' });
     }
 
-    if (typeof assignedServiceTime !== 'number' || assignedServiceTime < 0) {
-      return res.status(400).json({ error: 'assignedServiceTime must be a non-negative number (in minutes)' });
+    // Allow clearing assigned time by sending null
+    if (assignedServiceTime !== null) {
+      if (typeof assignedServiceTime !== 'number' || assignedServiceTime < 0) {
+        return res.status(400).json({ error: 'assignedServiceTime must be a non-negative number (in minutes) or null' });
+      }
     }
 
     const token = await Queue.findOneAndUpdate(
@@ -238,6 +269,45 @@ export const assignServiceTime = async (req, res, next) => {
       tokenNumber: token.tokenNumber,
       assignedServiceTime: token.assignedServiceTime,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/admin/service-times
+export const getServiceTimes = async (req, res, next) => {
+  try {
+    const times = await ServiceTime.find().sort({ serviceType: 1 });
+    res.json({ serviceTimes: times });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/admin/service-times
+export const setServiceTime = async (req, res, next) => {
+  try {
+    const { serviceType, estimatedMinutes } = req.body;
+    if (!serviceType) {
+      return res.status(400).json({ error: 'serviceType is required' });
+    }
+
+    if (estimatedMinutes === null) {
+      await ServiceTime.findOneAndDelete({ serviceType });
+      return res.json({ message: 'Service time cleared', serviceType });
+    }
+
+    if (typeof estimatedMinutes !== 'number' || estimatedMinutes <= 0) {
+      return res.status(400).json({ error: 'estimatedMinutes must be a positive number (in minutes) or null' });
+    }
+
+    const updated = await ServiceTime.findOneAndUpdate(
+      { serviceType },
+      { $set: { estimatedMinutes } },
+      { upsert: true, new: true }
+    );
+
+    res.json({ message: 'Service time saved', serviceTime: updated });
   } catch (err) {
     next(err);
   }
