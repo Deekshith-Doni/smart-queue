@@ -1,0 +1,14 @@
+/* Minimal responsive styles for mobile-friendly UI */
+:root { --primary: #0ea5e9; --bg: #f8fafc; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, Arial, sans-serif; background: var(--bg); }
+.container { max-width: 640px; margin: 0 auto; padding: 16px; }
+.card { background: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.button { background: var(--primary); color: white; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+.button:disabled { opacity: 0.6; cursor: not-allowed; }
+.select, .input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.link { color: var(--primary); text-decoration: none; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.stat { background: #f1f5f9; border-radius: 8px; padding: 12px; text-align: center; }

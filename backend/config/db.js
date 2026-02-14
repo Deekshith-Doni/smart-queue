@@ -1,12 +1,14 @@
-// backend/config/db.js
-const mongoose = require('mongoose');
+// Database connection helper (MongoDB via Mongoose)
+import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
-    const uri = process.env.MONGO_URI
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      throw new Error('MONGODB_URI is not set in .env');
+    }
     await mongoose.connect(uri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      // modern Mongoose uses sane defaults; keep options minimal
     });
     console.log('MongoDB connected');
   } catch (err) {
@@ -15,4 +17,4 @@ const connectDB = async () => {
   }
 };
 
-module.exports = connectDB;
+export default connectDB;
