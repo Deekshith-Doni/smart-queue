@@ -4,6 +4,8 @@
 # environment files
 .env
 **/.env
+.env.example
+**/.env.example
 
 # logs
 npm-debug.log*
@@ -16,3 +18,7 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Ignore docs and how-to-run
+docs/
+how-to-run/

@@ -1,6 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  LayoutDashboard, 
+  BarChart3, 
+  Settings, 
+  LogOut, 
+  Users, 
+  Clock, 
+  CheckCircle2, 
+  Play, 
+  RotateCcw,
+  Sun,
+  Moon
+} from 'lucide-react';
 import api from '../services/api.js';
+import { socket } from '../services/socket.js';
 
 export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState({ totalTokensGenerated: 0, tokensServed: 0, averageWaitingTime: 0 });
@@ -17,6 +32,9 @@ export default function AdminDashboard() {
   const [timeInput, setTimeInput] = useState('');
   const [assigningTime, setAssigningTime] = useState(false);
   const [savingDefaultTime, setSavingDefaultTime] = useState(false);
+  const [notice, setNotice] = useState({ type: '', message: '' });
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('sq_theme') || 'light');
   const navigate = useNavigate();
 
   const fetchData = async () => {
@@ -45,61 +63,70 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('sq_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+  useEffect(() => {
     fetchData();
+
+    // Socket listener for real-time dashboard updates
+    socket.on('queueUpdate', (data) => {
+      console.log('Admin received update:', data);
+      fetchData();
+    });
+
+    return () => {
+      socket.off('queueUpdate');
+    };
   }, []);
 
   const next = async () => {
     try {
+      setNotice({ type: '', message: '' });
+      setConfirmReset(false);
       setLoadingNext(true);
-      const { data } = await api.post('/admin/next');
-      setServing(data.currentServingToken);
-      fetchData();
+      await api.post('/admin/next');
+      setNotice({ type: 'success', message: 'Queue advanced.' });
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to move to next token');
+      setNotice({ type: 'error', message: err.response?.data?.error || 'Operation failed' });
     } finally {
       setLoadingNext(false);
     }
   };
 
   const reset = async () => {
-    if (!confirm('Reset the entire queue?')) return;
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setNotice({ type: 'warning', message: 'Confirm reset?' });
+      return;
+    }
     try {
+      setNotice({ type: '', message: '' });
       await api.post('/admin/reset');
-      setServing(null);
-      setWaiting([]);
-      setTimings(null);
-      setAllTokens([]);
-      fetchData();
+      setConfirmReset(false);
+      setNotice({ type: 'success', message: 'System reset.' });
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to reset queue');
+      setNotice({ type: 'error', message: err.response?.data?.error || 'Reset failed' });
     }
   };
 
   const assignTime = async () => {
-    if (!selectedTokenForTime || !timeInput) {
-      alert('Please select a token and enter time (in minutes)');
-      return;
-    }
-
+    if (!selectedTokenForTime || !timeInput) return;
     try {
       setAssigningTime(true);
-      const minutes = parseFloat(timeInput);
-      if (isNaN(minutes) || minutes < 0) {
-        alert('Please enter a valid positive number for time');
-        return;
-      }
-
       await api.post('/admin/assign-time', {
-        tokenNumber: parseInt(selectedTokenForTime),
-        assignedServiceTime: minutes,
+        tokenNumber: parseInt(selectedTokenForTime, 10),
+        assignedServiceTime: parseFloat(timeInput),
       });
-
-      alert(`Service time set to ${minutes} minute(s) for token #${selectedTokenForTime}`);
+      setNotice({ type: 'success', message: 'Time assigned.' });
       setSelectedTokenForTime('');
       setTimeInput('');
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to assign time');
+      setNotice({ type: 'error', message: 'Failed to assign time' });
     } finally {
       setAssigningTime(false);
     }
@@ -108,228 +135,158 @@ export default function AdminDashboard() {
   const saveDefaultTime = async () => {
     try {
       setSavingDefaultTime(true);
-
-      if (defaultTimeInput === '') {
-        await api.post('/admin/service-times', { serviceType: serviceTypeForDefault, estimatedMinutes: null });
-        alert(`Default time cleared for ${serviceTypeForDefault}`);
-        fetchData();
-        return;
-      }
-
-      const minutes = parseFloat(defaultTimeInput);
-      if (isNaN(minutes) || minutes <= 0) {
-        alert('Please enter a valid positive number (minutes) or leave empty to clear');
-        return;
-      }
-
+      const minutes = defaultTimeInput === '' ? null : parseFloat(defaultTimeInput);
       await api.post('/admin/service-times', { serviceType: serviceTypeForDefault, estimatedMinutes: minutes });
-      alert(`Default time set to ${minutes} minute(s) for ${serviceTypeForDefault}`);
+      setNotice({ type: 'success', message: 'Default saved.' });
       setDefaultTimeInput('');
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to save default time');
+      setNotice({ type: 'error', message: 'Failed to save' });
     } finally {
       setSavingDefaultTime(false);
     }
   };
 
   return (
-    <div className="container">
-      <div className="header">
-        <h2>Admin Dashboard</h2>
-        <button className="button" onClick={() => { localStorage.removeItem('sq_admin_token'); navigate('/'); }}>Logout</button>
-      </div>
-
-      {/* Tab navigation */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <button
-          className="button"
-          onClick={() => setTab('overview')}
-          style={{ background: tab === 'overview' ? '#0ea5e9' : '#cbd5e1', color: 'white' }}
-        >
-          Overview
-        </button>
-        <button
-          className="button"
-          onClick={() => setTab('timings')}
-          style={{ background: tab === 'timings' ? '#0ea5e9' : '#cbd5e1', color: 'white' }}
-        >
-          Timing Stats
-        </button>
-      </div>
-
-      {tab === 'overview' && (
-        <>
-          <div className="card" style={{ marginBottom: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Overview</h3>
-            <div className="stats">
-          <div className="stat">
-            <div>Total Tokens</div>
-            <strong>{analytics.totalTokensGenerated}</strong>
-          </div>
-          <div className="stat">
-            <div>Tokens Served</div>
-            <strong>{analytics.tokensServed}</strong>
-          </div>
-          <div className="stat">
-            <div>Avg Wait (min)</div>
-            <strong>{analytics.averageWaitingTime}</strong>
-          </div>
-          <div className="stat">
-            <div>Currently Serving</div>
-            <strong>{serving ?? '—'}</strong>
-          </div>
+    <div className="container" style={{ maxWidth: '800px' }}>
+      <header className="header">
+        <div className="page-brand">
+          <LayoutDashboard size={24} style={{ color: 'var(--primary)' }} />
+          <h2>Admin Center</h2>
         </div>
-        <div style={{ marginTop: 12 }} className="row">
-          <button className="button" onClick={next} disabled={loadingNext}>{loadingNext ? 'Processing…' : 'Move to Next'}</button>
-          <button className="button" onClick={reset} style={{ background: '#ef4444' }}>Reset Queue</button>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Assign Service Time (Optional)</h3>
-        <p style={{ fontSize: 14, color: '#666', marginTop: 0 }}>Set expected service duration for any token. If not set, estimated time is calculated automatically.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <select
-            className="select"
-            value={selectedTokenForTime}
-            onChange={(e) => setSelectedTokenForTime(e.target.value)}
-          >
-            <option value="">Select Token</option>
-            {allTokens.map((t) => (
-              <option key={t.tokenNumber} value={t.tokenNumber}>
-                Token #{t.tokenNumber} ({t.serviceType}) - {t.status}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            className="input"
-            placeholder="Minutes"
-            value={timeInput}
-            onChange={(e) => setTimeInput(e.target.value)}
-            min="0"
-            step="0.5"
-          />
-          <button
-            className="button"
-            onClick={assignTime}
-            disabled={assigningTime}
-          >
-            {assigningTime ? 'Assigning…' : 'Assign Time'}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="button ghost" onClick={toggleTheme} style={{ padding: '8px', borderRadius: '50%' }}>
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+          <button className="button ghost" onClick={() => { localStorage.removeItem('sq_admin_token'); navigate('/'); }}>
+            <LogOut size={16} />
           </button>
         </div>
+      </header>
+
+      <div className="tabs">
+        <button className={`tab-btn${tab === 'overview' ? ' active' : ''}`} onClick={() => setTab('overview')}>
+          <Users size={14} style={{ marginRight: 6 }} /> Overview
+        </button>
+        <button className={`tab-btn${tab === 'timings' ? ' active' : ''}`} onClick={() => setTab('timings')}>
+          <BarChart3 size={14} style={{ marginRight: 6 }} /> Analytics
+        </button>
       </div>
 
-      <div className="card" style={{ marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Default Service Times (Optional)</h3>
-        <p style={{ fontSize: 14, color: '#666', marginTop: 0 }}>Set default times per service. Leave empty and save to clear.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <select
-            className="select"
-            value={serviceTypeForDefault}
-            onChange={(e) => setServiceTypeForDefault(e.target.value)}
+      <AnimatePresence mode="wait">
+        {notice.message && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className={`notice ${notice.type}`}
+            style={{ marginBottom: 16 }}
           >
-            <option>General</option>
-            <option>Billing</option>
-            <option>Support</option>
-            <option>Technical</option>
-          </select>
-          <input
-            type="number"
-            className="input"
-            placeholder="Minutes"
-            value={defaultTimeInput}
-            onChange={(e) => setDefaultTimeInput(e.target.value)}
-            min="0"
-            step="0.5"
-          />
-          <button
-            className="button"
-            onClick={saveDefaultTime}
-            disabled={savingDefaultTime}
-          >
-            {savingDefaultTime ? 'Saving…' : 'Save Default'}
-          </button>
-        </div>
-        {serviceTimes.length > 0 && (
-          <div style={{ fontSize: 14, color: '#444' }}>
-            Current defaults: {serviceTimes.map((t) => `${t.serviceType}: ${t.estimatedMinutes} min`).join(' | ')}
-          </div>
+            {notice.message}
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>Waiting Tokens</h3>
-            {waiting.length === 0 ? (
-              <p>No tokens waiting.</p>
-            ) : (
-              <ul>
-                {waiting.map((w) => (
-                  <li key={w.tokenNumber}>Token #{w.tokenNumber} — {w.serviceType}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </>
-      )}
-
-      {tab === 'timings' && timings && (
-        <>
-          <div className="card" style={{ marginBottom: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Timing Statistics</h3>
-            <div className="stats">
-              <div className="stat">
-                <div>Average Time (min)</div>
-                <strong>{timings.timings.averageTime}</strong>
+      <motion.div 
+        key={tab}
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        {tab === 'overview' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="card">
+              <p className="section-title">Live Controls</p>
+              <div className="stats" style={{ marginBottom: 20 }}>
+                <div className="stat highlight">
+                  <div>Serving Now</div>
+                  <strong style={{ fontSize: '2rem' }}>{serving ?? '—'}</strong>
+                </div>
+                <div className="stat">
+                  <div>Waiting</div>
+                  <strong>{waiting.length}</strong>
+                </div>
+                <div className="stat">
+                  <div>Total Today</div>
+                  <strong>{analytics.totalTokensGenerated}</strong>
+                </div>
+                <div className="stat">
+                  <div>Avg. Wait</div>
+                  <strong>{analytics.averageWaitingTime}m</strong>
+                </div>
               </div>
-              <div className="stat">
-                <div>Median Time (min)</div>
-                <strong>{timings.timings.medianTime}</strong>
-              </div>
-              <div className="stat">
-                <div>Min Time (min)</div>
-                <strong>{timings.timings.minTime}</strong>
-              </div>
-              <div className="stat">
-                <div>Max Time (min)</div>
-                <strong>{timings.timings.maxTime}</strong>
+              <div className="row">
+                <button className="button" onClick={next} disabled={loadingNext} style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+                  <Play size={16} fill="currentColor" /> {loadingNext ? '...' : 'Next Customer'}
+                </button>
+                <button className={`button ${confirmReset ? 'danger' : 'ghost'}`} onClick={reset} style={{ flex: confirmReset ? 1 : 0.5 }}>
+                  <RotateCcw size={16} /> {confirmReset ? 'Confirm Reset' : 'Reset'}
+                </button>
               </div>
             </div>
-            <p style={{ marginTop: 12, fontSize: 14, color: '#666' }}>
-              Showing last {timings.timings.totalServed} served tokens
-            </p>
-          </div>
 
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>Recent Served Tokens</h3>
-            {timings.recentServed.length === 0 ? (
-              <p>No served tokens yet.</p>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                    <th style={{ textAlign: 'left', padding: 8 }}>Token #</th>
-                    <th style={{ textAlign: 'left', padding: 8 }}>Service</th>
-                    <th style={{ textAlign: 'left', padding: 8 }}>Duration (min)</th>
-                    <th style={{ textAlign: 'left', padding: 8 }}>Served At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timings.recentServed.map((token) => (
-                    <tr key={token.tokenNumber} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: 8 }}>{token.tokenNumber}</td>
-                      <td style={{ padding: 8 }}>{token.serviceType}</td>
-                      <td style={{ padding: 8 }}>{token.duration}</td>
-                      <td style={{ padding: 8, fontSize: 12 }}>{new Date(token.servedAt).toLocaleTimeString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="card">
+                <p className="section-title"><Clock size={14} /> Service Times</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select className="select" value={serviceTypeForDefault} onChange={(e) => setServiceTypeForDefault(e.target.value)}>
+                    <option>General</option><option>Billing</option><option>Support</option><option>Technical</option>
+                  </select>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input type="number" className="input" placeholder="Min" value={defaultTimeInput} onChange={(e) => setDefaultTimeInput(e.target.value)} />
+                    <button className="button" onClick={saveDefaultTime} disabled={savingDefaultTime}><Settings size={14} /></button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <p className="section-title"><Users size={14} /> Waiting List</p>
+                <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+                  {waiting.length === 0 ? (
+                    <p style={{ fontSize: '.8rem', color: 'var(--muted)' }}>Empty</p>
+                  ) : (
+                    <ul className="token-list">
+                      {waiting.map(w => (
+                        <li key={w.tokenNumber} className="token-item" style={{ padding: '6px 10px', fontSize: '.8rem' }}>
+                          <strong>#{w.tokenNumber}</strong>
+                          <span className="service-tag">{w.serviceType}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-        </>
-      )}
+        )}
+
+        {tab === 'timings' && timings && (
+          <div className="card">
+            <p className="section-title">Historical Analytics</p>
+            <div className="stats" style={{ marginBottom: 24 }}>
+              <div className="stat"><div>Median</div><strong>{timings.timings.medianTime}m</strong></div>
+              <div className="stat"><div>Fastest</div><strong>{timings.timings.minTime}m</strong></div>
+              <div className="stat"><div>Slowest</div><strong>{timings.timings.maxTime}m</strong></div>
+              <div className="stat"><div>Served</div><strong>{timings.timings.totalServed}</strong></div>
+            </div>
+            
+            <p className="section-title" style={{ fontSize: '.8rem' }}>Recent History</p>
+            <table className="data-table">
+              <thead><tr><th>Token</th><th>Type</th><th>Time</th><th>Success</th></tr></thead>
+              <tbody>
+                {timings.recentServed.slice(0, 8).map(token => (
+                  <tr key={token.tokenNumber}>
+                    <td>#{token.tokenNumber}</td>
+                    <td>{token.serviceType}</td>
+                    <td>{token.duration}m</td>
+                    <td><CheckCircle2 size={14} style={{ color: '#10b981' }} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }

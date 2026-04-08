@@ -1,80 +1,55 @@
-# Smart Queue Management System
+# Smart Queue Management System (Version 2.0)
 
-Academic + real-world project suitable for BCA final year, internships, and technical interviews.
+Professional-grade digital token management platform for high-throughput service environments (Clinics, Banks, Customer Support Centers).
 
 ## Tech Stack
-- Frontend: React (Vite), React Router DOM, Axios, responsive CSS
-- Backend: Node.js, Express.js, MongoDB (Mongoose), JWT (Admin only)
-- Realtime: Polling every 5 seconds
-- Deployment: Frontend (Vercel/Netlify), Backend (Render), DB (MongoDB Atlas)
+-   **Frontend**: React (Vite), Framer Motion (Micro-animations), Lucide-React (Iconography), Socket.io-client, Axios, Premium Glassmorphism CSS.
+-   **Backend**: Node.js, Express.js, Socket.io (Realtime bidirectional updates), MongoDB (Mongoose), JWT-based Admin Security.
+-   **Design**: Modern Dark Mode, Translucent UI components, Responsive Grid Layouts.
 
-## Features
-- User (no login): select service, get token, see status (current serving, waiting count, estimated wait time). Auto-refresh via polling.
-- Admin (login): dashboard with overview, move to next token, reset queue, analytics, waiting list, and timing stats. JWT-protected.
-- Optional time controls: per-token assigned time and per-service default time to improve wait estimates.
+## Version 2.0 Enhancements
+-   **Atomic Counter Engine**: Guarantees zero-collision token generation even under extreme concurrent loads.
+-   **Wait-Time Intelligence**: Dynamic estimation based on average service duration (ASD) per service type.
+-   **Admin Suite**: Comprehensive dashboard with live queue analytics, per-token time assignment, and historical reset capabilities.
+-   **Digital Ticketing**: Seamless PDF/Digital ticket generation for users without account registration.
+-   **SDG Alignment**: Built to support Sustainable Development Goals 3, 9, and 11 by improving health safety and urban efficiency.
 
 ## Project Structure
-smart-queue-system/
-- backend/
-  - config/, models/, controllers/, routes/, middleware/
-  - server.js
-  - .env.example
-- frontend/
-  - src/pages, src/components, src/services
-  - App.jsx, main.jsx, index.css
-  - vite.config.js, index.html
-- README.md
-
-## Environment Variables
-Create `backend/.env` using `backend/.env.example`:
-```
-MONGODB_URI=your_mongodb_atlas_uri
-JWT_SECRET=your_jwt_secret
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
-PORT=5000
-```
-
-For frontend deployment, set `VITE_API_URL` to your backend base URL (e.g., `https://your-render.onrender.com/api`).
+`smart-queue-system/`
+-   `backend/`: MVC architecture, MongoDB models, JWT middleware, Express controllers.
+-   `frontend/`: Modular React components, Tailwind-like custom CSS utilities, Vite optimization.
+-   `docs/`: Comprehensive project reports (PDF, DOCX) and SDS/SRS documentation.
+-   `docs/scripts/`: Automation scripts for detailed report generation.
 
 ## Running Locally
-Backend (in `smart-queue-system/backend`):
+### Prerequisites
+-   Node.js (LTS version recommended)
+-   MongoDB Account or local installation (App supports in-memory MongoDB for demo mode).
+
+### Commands
+**Backend**:
 ```bash
+cd backend
+npm install
+npm run start # or node demo_server.js for in-memory DB
+```
+
+**Frontend**:
+```bash
+cd frontend
 npm install
 npm run dev
 ```
-Frontend (in `smart-queue-system/frontend`):
-```bash
-npm install
-npm run dev
-```
-Open `http://localhost:5173`. The frontend uses `http://localhost:5000/api` when `VITE_API_URL` is not set.
 
-## API Endpoints
-User APIs:
-- POST `/api/queue/token` — generate token `{ serviceType }`
-- GET `/api/queue/status?tokenNumber=123` — currentServingToken, waitingCount, estimatedWaitTime, userToken, userTokenEstimatedWaitTime
+Open `http://localhost:5173`.
 
-Admin APIs:
-- POST `/api/admin/login`
-- POST `/api/admin/next`
-- POST `/api/admin/reset`
-- GET  `/api/admin/analytics`
-- GET  `/api/admin/waiting` (for dashboard list)
-- GET  `/api/admin/timings` (timing stats)
-- GET  `/api/admin/all-tokens` (admin selection list)
-- POST `/api/admin/assign-time` (per-token assigned minutes)
-- GET  `/api/admin/service-times` (per-service defaults)
-- POST `/api/admin/service-times` (set/clear defaults)
+## Design Philosophy (Advanced)
+1.  **Stateless API Management**: Backend routes are strictly stateless, ensuring Horizontal scalability.
+2.  **Concurrency Safe**: Uses `findOneAndUpdate` with `$inc` at the document level to ensure token integrity.
+3.  **Authentication**: Multi-layered JWT protection with auto-expiration to secure administrative workflows.
+4.  **UX First**: Zero-friction user journey with no-login required for public token actions.
 
-## Design Notes (Interview-ready)
-- Auto-increment tokens use a `Counter` collection with `findOneAndUpdate($inc)` to avoid race conditions.
-- Only one `serving` token at a time: admin `next` marks current `serving` as `served`, then promotes earliest `waiting`.
-- Estimated wait time: per-token assigned time overrides service defaults; otherwise average of historical served durations (fallback to 5 minutes).
-- Admin seeding: optional seed on startup from `.env` for demo simplicity.
-- Clean MVC: models/controllers/routes/middleware with async/await and centralized error handling.
-
-## Deployment Tips
-- Backend on Render: set environment variables from `.env`; use `node server.js` as start command.
-- Frontend on Vercel/Netlify: set `VITE_API_URL` to your Render URL + `/api`.
-- MongoDB Atlas: whitelist Render IPs or use VPC peering where applicable.
+## Deployment
+-   **Frontend**: Vercel / Netlify
+-   **Backend**: Render / Heroku / AWS EC2
+-   **Database**: MongoDB Atlas Cluster

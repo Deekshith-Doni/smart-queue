@@ -3,6 +3,9 @@
 import Queue from '../models/Queue.js';
 import Counter from '../models/Counter.js';
 import ServiceTime from '../models/ServiceTime.js';
+import { emitQueueUpdate } from '../socket.js';
+
+const ALLOWED_SERVICE_TYPES = ['General', 'Billing', 'Support', 'Technical'];
 
 // Helper: atomically get next token number
 async function getNextTokenNumber() {
@@ -52,10 +55,14 @@ export const generateToken = async (req, res, next) => {
     if (!serviceType) {
       return res.status(400).json({ error: 'serviceType is required' });
     }
+    if (!ALLOWED_SERVICE_TYPES.includes(serviceType)) {
+      return res.status(400).json({ error: `serviceType must be one of: ${ALLOWED_SERVICE_TYPES.join(', ')}` });
+    }
 
     const tokenNumber = await getNextTokenNumber();
 
     const token = await Queue.create({ tokenNumber, serviceType, status: 'waiting' });
+    emitQueueUpdate({ type: 'NEW_TOKEN', tokenNumber: token.tokenNumber });
 
     res.status(201).json({
       message: 'Token generated successfully',
@@ -95,12 +102,19 @@ export const getStatus = async (req, res, next) => {
     // If userTokenNumber is provided, try to include its status
     let userToken = null;
     let userTokenEstimatedWaitTime = null;
+    let userTokenPosition = null;
     if (userTokenNumber) {
       const doc = await Queue.findOne({ tokenNumber: userTokenNumber });
       if (doc) {
         // Estimate wait for this user: sum of estimates of tokens ahead in waiting list
         const aheadTokens = waitingTokens.filter((t) => t.tokenNumber < doc.tokenNumber);
         userTokenEstimatedWaitTime = aheadTokens.reduce((sum, t) => sum + estimateForToken(t), 0);
+        if (doc.status === 'waiting') {
+          const idx = waitingTokens.findIndex((t) => t.tokenNumber === doc.tokenNumber);
+          userTokenPosition = idx >= 0 ? idx + 1 : null;
+        } else if (doc.status === 'serving') {
+          userTokenPosition = 0;
+        }
         userToken = {
           tokenNumber: doc.tokenNumber,
           status: doc.status,
@@ -116,6 +130,7 @@ export const getStatus = async (req, res, next) => {
       estimatedWaitTime, // minutes
       userToken,
       userTokenEstimatedWaitTime,
+      userTokenPosition,
     });
   } catch (err) {
     next(err);
@@ -138,10 +153,12 @@ export const moveToNextToken = async (req, res, next) => {
     if (nextToken) {
       nextToken.status = 'serving';
       await nextToken.save();
+      emitQueueUpdate({ type: 'NEXT_TOKEN', currentServingToken: nextToken.tokenNumber });
       return res.json({ message: 'Moved to next token', currentServingToken: nextToken.tokenNumber });
     }
 
     // No waiting tokens; no current serving remains
+    emitQueueUpdate({ type: 'NEXT_TOKEN', currentServingToken: null });
     return res.json({ message: 'No waiting tokens', currentServingToken: null });
   } catch (err) {
     next(err);
@@ -153,6 +170,7 @@ export const resetQueue = async (req, res, next) => {
   try {
     await Queue.deleteMany({});
     await Counter.findOneAndUpdate({ name: 'queue' }, { $set: { seq: 0 } }, { upsert: true });
+    emitQueueUpdate({ type: 'QUEUE_RESET' });
     res.json({ message: 'Queue reset successfully' });
   } catch (err) {
     next(err);
@@ -264,6 +282,8 @@ export const assignServiceTime = async (req, res, next) => {
       return res.status(404).json({ error: 'Token not found' });
     }
 
+    emitQueueUpdate({ type: 'TIME_ASSIGNED', tokenNumber: token.tokenNumber });
+
     res.json({
       message: 'Service time assigned successfully',
       tokenNumber: token.tokenNumber,
@@ -291,6 +311,9 @@ export const setServiceTime = async (req, res, next) => {
     if (!serviceType) {
       return res.status(400).json({ error: 'serviceType is required' });
     }
+    if (!ALLOWED_SERVICE_TYPES.includes(serviceType)) {
+      return res.status(400).json({ error: `serviceType must be one of: ${ALLOWED_SERVICE_TYPES.join(', ')}` });
+    }
 
     if (estimatedMinutes === null) {
       await ServiceTime.findOneAndDelete({ serviceType });
@@ -306,6 +329,8 @@ export const setServiceTime = async (req, res, next) => {
       { $set: { estimatedMinutes } },
       { upsert: true, new: true }
     );
+
+    emitQueueUpdate({ type: 'DEFAULTS_UPDATED' });
 
     res.json({ message: 'Service time saved', serviceTime: updated });
   } catch (err) {
